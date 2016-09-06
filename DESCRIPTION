@@ -1,7 +1,7 @@
 Package: LSP
 Type: Package
 Title: LSP: Lomb Scargle Periodogram
-Version: 0.1.0
+Version: 0.1.1
 Author: Michal Horemuz
 Maintainer: Who to complain to <yourfault@somewhere.net>
 Description: Calculate Lomb Scargle Periodogram, and some other neat things.
