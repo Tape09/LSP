@@ -4,16 +4,16 @@
 \alias{lsp}
 \title{Lomb Scargle Periodogram}
 \usage{
-lsp(t, y, ofac = 2, MCsim = NULL, zero_factor = 0, pval_thresh = 1)
+lsp(t, y, ofac = 2, mc_sim = NULL, zero_factor = 0, pval_thresh = 1)
 }
 \arguments{
 \item{t}{Numeric vector of timepoints.}
 
 \item{y}{Numeric vector of values corresponding to t.}
 
-\item{ofac}{Oversampling factor. Recommend 2-4. Higher improves granularity, but may cause artefacts.}
+\item{ofac}{Oversampling factor. Recommend >=2. Higher improves granularity, but may cause artefacts.}
 
-\item{MCsim}{MCsim object returned by function "monte_carlo_lsp". If not NULL will return p-values.}
+\item{mc_sim}{monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values.}
 
 \item{zero_factor}{Integer, zero padding factor. Pads fourier series to increase resolution of approximated function. Number of zeros is equal to zero_factor*length of (unpadded) fourier series. Value of 0 means no padding.}
 
@@ -26,15 +26,69 @@ y - original y.\cr
 t2 - approximated t.\cr
 y2 - reconstructed y. plot against t2.\cr
 frequency - frequency range used.\cr
-spectral_power_density - Plot against Frequency for the periodogram\cr
+spectral_power_density - Plot against Frequency for the periodogram. unitless.\cr
+phase - phase relative to 0 in radians. range 0:2*pi.\cr
 peak_info - data.frame with index, frequency, spd, and (optional) pvalue of each detected peak.\cr
+peak_idx - index of highest peak\cr
 peak_spd - highest spd\cr
-peak_period - period corresponding to peak_spd\cr
-fourier - fourier series\cr
-fourier_freq frequencies for fourier series\cr
+peak_period - period corresponding to peak_idx\cr
+peak_phase - phase corresponding to peak_idx\cr
 }
 \description{
 Calculates the Lomb Scargle Periodogram using the algorithm described by K. Hocke and N. Kämpfer (2009).
+}
+\examples{
+library(LSP)
+
+#set up testing parameters
+ofac = 8;
+amp=3;
+sd = 1.0;
+n = 100; #initial series length
+n_out = 50; #sereis length after random sampling
+period = 45;
+freq = 1/period;
+offset = 0;
+phase = pi;
+p_thresh = 0.05
+N_mc_runs = 1000;
+zero_factor = 2;
+N_cores = 1;
+
+#create testing data
+x = seq(0,n-1)
+x = x + offset;
+y = amp*cos(2*pi*freq*x + phase);
+
+#random sampling to simulate missing data/irregular timepoints
+idx = seq(1,n);
+idx = sample(idx,n_out);
+idx = sort(idx)
+
+#add some noise
+y = rnorm(n,0,sd) + y;
+
+#final data
+y = y[idx];
+x = x[idx];
+
+#monte carlo
+mc_sim = monte_carlo_lsp(x,N_mc_runs,ofac,N_cores);
+
+#LSP
+result = lsp(x,y,ofac=ofac,mc_sim = mc_sim,zero_factor = zero_factor, pval_thresh = p_thresh);
+
+#plot input data vs reconstructed signal
+plot(result$t,result$y,col="red")
+lines(result$t2,result$y2,col="green")
+
+print(result$peak_phase) #not too reliable
+print(result$peak_period) #pretty good
+
+
+
+
+
 }
 \references{
 Hocke, K., and N. Kämpfer. "Gap filling and noise reduction of unevenly sampled data by means of the Lomb-Scargle periodogram." Atmospheric Chemistry and Physics 9.12 (2009): 4197-4206.

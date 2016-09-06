@@ -1,14 +1,16 @@
 Package: LSP
 Type: Package
-Title: What the Package Does (Title Case)
+Title: LSP: Lomb Scargle Periodogram
 Version: 0.1.0
-Author: Who wrote it
+Author: Michal Horemuz
 Maintainer: Who to complain to <yourfault@somewhere.net>
-Description: More about what it does (maybe more than one line)
+Description: Calculate Lomb Scargle Periodogram, and some other neat things.
 License: What license is it under?
 LazyData: TRUE
 RoxygenNote: 5.0.1
 Imports:
   pracma,
   parallel,
-  MASS
+  MASS,
+  stats
+

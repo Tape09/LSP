@@ -3,8 +3,8 @@
 #' Calculates the Lomb Scargle Periodogram using the algorithm described by K. Hocke and N. Kämpfer (2009).
 #' @param t Numeric vector of timepoints.
 #' @param y Numeric vector of values corresponding to t.
-#' @param ofac Oversampling factor. Recommend 2-4. Higher improves granularity, but may cause artefacts.
-#' @param MCsim MCsim object returned by function "monte_carlo_lsp". If not NULL will return p-values.
+#' @param ofac Oversampling factor. Recommend >=2. Higher improves granularity, but may cause artefacts.
+#' @param mc_sim monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values.
 #' @param zero_factor Integer, zero padding factor. Pads fourier series to increase resolution of approximated function. Number of zeros is equal to zero_factor*length of (unpadded) fourier series. Value of 0 means no padding.
 #' @param pval_thresh Filter fourier series based on peak strength p value. This will affect the reconstructed series.
 #' @return A list with the following elements:\cr
@@ -13,15 +13,17 @@
 #' t2 - approximated t.\cr
 #' y2 - reconstructed y. plot against t2.\cr
 #' frequency - frequency range used.\cr
-#' spectral_power_density - Plot against Frequency for the periodogram\cr
+#' spectral_power_density - Plot against Frequency for the periodogram. unitless.\cr
+#' phase - phase relative to 0 in radians. range 0:2*pi.\cr
 #' peak_info - data.frame with index, frequency, spd, and (optional) pvalue of each detected peak.\cr
+#' peak_idx - index of highest peak\cr
 #' peak_spd - highest spd\cr
-#' peak_period - period corresponding to peak_spd\cr
-#' fourier - fourier series\cr
-#' fourier_freq frequencies for fourier series\cr
+#' peak_period - period corresponding to peak_idx\cr
+#' peak_phase - phase corresponding to peak_idx\cr
 #' @references Hocke, K., and N. Kämpfer. "Gap filling and noise reduction of unevenly sampled data by means of the Lomb-Scargle periodogram." Atmospheric Chemistry and Physics 9.12 (2009): 4197-4206.
+#' @example test.R
 #' @export
-lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
+lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   xstart=t[1];
   x=t-xstart;
 
@@ -43,7 +45,7 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
   Fx=wi;
   Fy=wi;
   ave=mean(y);
-  vari=var(y);
+  vari=stats::var(y);
 
   xmax=max(x);
   xmin=min(x);
@@ -96,7 +98,6 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
   wk1=px ;
   wk2=py;
 
-
   Fxr=rev(Fx)[-1]
   Fyr=rev(Fy)[-1]
   #%complex Fourier spectrum which corresponds to the Lomb-Scargle periodogram:
@@ -107,20 +108,25 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
   PeakIndex = match(max(wk2), wk2)
   PeakPeriod <- 1 / wk1[PeakIndex]
 
+  phase = ph %% (2*pi);
+  phase = phase[1:length(phase)/2]
+
+  peak_phase = phase[PeakIndex];
+
   N = length(t);
   NF = length(fou)
   pp = pracma::findpeaks(wk2,threshold = 0)
 
 
-  if(is.null(MCsim)) {
-    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1]);
+  if(is.null(mc_sim)) {
+    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase[pp[,2]]);
   } else {
     spd = pp[,1];
     pvals = numeric(length(spd));
     for(i in 1:length(spd)) {
-      pvals[i] = calc_p(MCsim,spd[i]);
+      pvals[i] = calc_p(mc_sim,spd[i]);
     }
-    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],pval=pvals);
+    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase[pp[,2]],pval=pvals);
   }
   peak_info = peak_info[order(peak_info[,3],decreasing = T),]
 
@@ -128,7 +134,7 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
 
   idxs = peak_info[["idx"]]+1;
 
-  if(!is.null(MCsim)) {
+  if(!is.null(mc_sim)) {
     idxs = idxs[peak_info[["pval"]] <= pval_thresh]
     fou[-idxs]  = complex(1,0,0);
     fou[(NF/2+1):NF] = rev(Conj(fou[2:(NF/2+1)]));
@@ -144,6 +150,7 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
   #zero-pad
   fourier = c(fou[1:(NF/2)],rep(complex(1,0,0),NF*zero_factor),fou[(NF/2+1):NF])
 
+
   if(significant_peaks_found) {
     #ifft
     inverse_F = pracma::ifft(fourier);
@@ -153,7 +160,7 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
     # y2[length(y2)] = y2[1];
     t2 = seq(t[1],t[length(t)], length.out = length(y2)+1);
     t2 = t2[-length(t2)];
-    y2i = approx(t2,y=y2,xout=t);
+    y2i = stats::approx(t2,y=y2,xout=t);
 
     rrr = MASS::rlm(y ~ y2i$y)
     y2 = rrr$coefficients[2]*y2 + rrr$coefficients[1];
@@ -169,13 +176,13 @@ lsp = function(t,y,ofac=2,MCsim=NULL,zero_factor=0,pval_thresh=1) {
                 y2=y2,
                 frequency=wk1,
                 spectral_power_density=wk2,
+                phase=ph %% (2*pi),
                 peak_info=peak_info,
+                peak_idx=PeakIndex,
                 peak_spd=wk2[PeakIndex],
                 peak_period=PeakPeriod,
                 peak_freq=wk1[PeakIndex],
-                fourier = fourier,
-                fourier_freq = FFreq
-
+                peak_phase=peak_phase
   ) )
 }
 
@@ -184,7 +191,7 @@ lsp_mc = function(t,N_runs,ofac) {
   # pb = txtProgressBar(min = 0, max = N_runs, initial = 0, char = "=", width = 50, style = 3)
   for(j in 1:N_runs) {
 
-    y=rnorm(length(t),mean=0,sd=1)
+    y=stats::rnorm(length(t),mean=0,sd=1)
     xstart=t[1];
     x=t-xstart;
 
@@ -206,7 +213,7 @@ lsp_mc = function(t,N_runs,ofac) {
     Fx=wi;
     Fy=wi;
     ave=mean(y);
-    vari=var(y);
+    vari=stats::var(y);
 
     xmax=max(x);
     xmin=min(x);
@@ -272,9 +279,9 @@ monte_carlo_lsp = function(t,Nruns,ofac,N_cores = 1) {
     }
   }
 
-  cl <- makeCluster(N_cores);
-  result = unlist(parSapply(cl,runs,lsp_mc,t=t,ofac=ofac))
-  stopCluster(cl)
+  cl <- parallel::makeCluster(N_cores);
+  result = unlist(parallel::parSapply(cl,runs,lsp_mc,t=t,ofac=ofac))
+  parallel::stopCluster(cl)
 
   return(list(t=t,Nruns=Nruns,ofac=ofac,peaks=result));
 }
