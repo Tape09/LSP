@@ -5,7 +5,7 @@ Version: 0.1.1
 Author: Michal Horemuz
 Maintainer: Who to complain to <yourfault@somewhere.net>
 Description: Calculate Lomb Scargle Periodogram, and some other neat things.
-License: What license is it under?
+License: None?
 LazyData: TRUE
 RoxygenNote: 5.0.1
 Imports:
