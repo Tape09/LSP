@@ -4,9 +4,10 @@
 #' @param t Numeric vector of timepoints.
 #' @param y Numeric vector of values corresponding to t.
 #' @param ofac Oversampling factor. Recommend >=2. Higher improves granularity, but may cause artefacts.
-#' @param mc_sim monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values.
+#' @param mc_sim monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values. If NULL will use spd for thresholding; using the "thresh" parameter
 #' @param zero_factor Integer, zero padding factor. Pads fourier series to increase resolution of approximated function. Number of zeros is equal to zero_factor*length of (unpadded) fourier series. Value of 0 means no padding.
-#' @param pval_thresh Filter fourier series based on peak strength p value. This will affect the reconstructed series.
+#' @param thresh Threshhold for p-value or Spectral Power Density. Filter fourier series based on peak strength p value if mc_sim not NULL, otherise on spd. This will affect the reconstructed series.
+#' @param verbose Verbosity level. 0=silent, 1=printed results.
 #' @return A list with the following elements:\cr
 #' t - original t.\cr
 #' y - original y.\cr
@@ -14,16 +15,17 @@
 #' y2 - reconstructed y. plot against t2.\cr
 #' frequency - frequency range used.\cr
 #' spectral_power_density - Plot against Frequency for the periodogram. unitless.\cr
-#' phase - phase relative to 0 in radians. range 0:2*pi.\cr
-#' peak_info - data.frame with index, frequency, spd, and (optional) pvalue of each detected peak.\cr
+#' phase_radian - phase relative to 0 in radians. range 0:2*pi.\cr
+#' phase_default - phase relative to 0 in the same unit as t. This is the distance from 0 to the nearest peak after t[1].\cr
+#' peak_info - data.frame with index, frequency, spd, phase_default, and (optional) pvalue of each detected peak.\cr
 #' peak_idx - index of highest peak\cr
 #' peak_spd - highest spd\cr
 #' peak_period - period corresponding to peak_idx\cr
-#' peak_phase - phase corresponding to peak_idx\cr
+#' peak_phase - phase_default corresponding to peak_idx\cr
 #' @references Hocke, K., and N. Kämpfer. "Gap filling and noise reduction of unevenly sampled data by means of the Lomb-Scargle periodogram." Atmospheric Chemistry and Physics 9.12 (2009): 4197-4206.
 #' @example test.R
 #' @export
-lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
+lsp = function(t,y,ofac=8,mc_sim=NULL,zero_factor=0,thresh=1,verbose=0) {
   xstart=t[1];
   x=t-xstart;
 
@@ -95,7 +97,8 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   Fx=a*cos(ph1); #% real part of FFT spectrum
   Fy=a*sin(ph1); #% imaginary part of FFT spectrum
   ph=ph + 5*twopi %% twopi;    #% for value range 0,..., 2 pi
-  wk1=px ;
+
+  wk1=px;
   wk2=py;
 
   Fxr=rev(Fx)[-1]
@@ -109,9 +112,20 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   PeakPeriod <- 1 / wk1[PeakIndex]
 
   phase = ph %% (2*pi);
-  phase = phase[1:length(phase)/2]
 
-  peak_phase = phase[PeakIndex];
+  phase_rel0 = phase/(2*pi) * 1/wk1;
+
+  phase_default = phase;
+  phase_rel0 = phase/(2*pi) * 1/wk1;
+  dist_to_first = t[1] - phase_rel0;
+  pidxs = dist_to_first < 0;
+
+  phase_default[!pidxs] = phase_rel0[!pidxs]+(1+dist_to_first[!pidxs] %/% (1/wk1[!pidxs]))/wk1[!pidxs];
+  phase_default[pidxs] = phase_rel0[pidxs]
+
+  phase_radian = phase;
+
+  peak_phase = phase_default[PeakIndex];
 
   N = length(t);
   NF = length(fou)
@@ -119,14 +133,14 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
 
 
   if(is.null(mc_sim)) {
-    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase[pp[,2]]);
+    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase_default[pp[,2]]);
   } else {
     spd = pp[,1];
     pvals = numeric(length(spd));
     for(i in 1:length(spd)) {
       pvals[i] = calc_p(mc_sim,spd[i]);
     }
-    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase[pp[,2]],pval=pvals);
+    peak_info = data.frame(idx=pp[,2],freq=wk1[pp[,2]],spd=pp[,1],phase=phase_default[pp[,2]],pval=pvals);
   }
   peak_info = peak_info[order(peak_info[,3],decreasing = T),]
 
@@ -135,9 +149,21 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   idxs = peak_info[["idx"]]+1;
 
   if(!is.null(mc_sim)) {
-    idxs = idxs[peak_info[["pval"]] <= pval_thresh]
+    idxs = idxs[peak_info[["pval"]] <= thresh]
     fou[-idxs]  = complex(1,0,0);
     fou[(NF/2+1):NF] = rev(Conj(fou[2:(NF/2+1)]));
+
+    if(verbose==1) {
+      print(paste(length(idxs)," significant Peaks found with pval <= ",thresh,sep=""))
+    }
+  } else {
+    idxs = idxs[peak_info[["spd"]] >= thresh]
+    fou[-idxs]  = complex(1,0,0);
+    fou[(NF/2+1):NF] = rev(Conj(fou[2:(NF/2+1)]));
+
+    if(verbose==1) {
+      print(paste(length(idxs)," significant Peaks found with spd >= ",thresh,sep=""))
+    }
   }
 
   if(length(idxs)==0){
@@ -145,6 +171,7 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   } else {
     significant_peaks_found = T;
   }
+
 
 
   #zero-pad
@@ -170,13 +197,24 @@ lsp = function(t,y,ofac=2,mc_sim=NULL,zero_factor=0,pval_thresh=1) {
   }
 
 
+  if(verbose==1) {
+    if(!is.null(mc_sim)) {
+      print(paste("Peak pval:",peak_info[1,5]))
+    } else {
+      print(paste("Peak spd:",wk2[PeakIndex]))
+    }
+    print(paste("Peak period:",PeakPeriod))
+    print(paste("Peak phase:",peak_phase))
+  }
+
   return( list( t=t,
                 y=y,
                 t2=t2,
                 y2=y2,
                 frequency=wk1,
                 spectral_power_density=wk2,
-                phase=ph %% (2*pi),
+                phase_radian=phase_radian,
+                phase_default=phase_default,
                 peak_info=peak_info,
                 peak_idx=PeakIndex,
                 peak_spd=wk2[PeakIndex],

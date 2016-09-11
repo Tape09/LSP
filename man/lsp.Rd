@@ -4,7 +4,8 @@
 \alias{lsp}
 \title{Lomb Scargle Periodogram}
 \usage{
-lsp(t, y, ofac = 2, mc_sim = NULL, zero_factor = 0, pval_thresh = 1)
+lsp(t, y, ofac = 8, mc_sim = NULL, zero_factor = 0, thresh = 1,
+  verbose = 0)
 }
 \arguments{
 \item{t}{Numeric vector of timepoints.}
@@ -13,11 +14,13 @@ lsp(t, y, ofac = 2, mc_sim = NULL, zero_factor = 0, pval_thresh = 1)
 
 \item{ofac}{Oversampling factor. Recommend >=2. Higher improves granularity, but may cause artefacts.}
 
-\item{mc_sim}{monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values.}
+\item{mc_sim}{monte carlo simulation object returned by function "monte_carlo_lsp". If not NULL will return p-values. If NULL will use spd for thresholding; using the "thresh" parameter}
 
 \item{zero_factor}{Integer, zero padding factor. Pads fourier series to increase resolution of approximated function. Number of zeros is equal to zero_factor*length of (unpadded) fourier series. Value of 0 means no padding.}
 
-\item{pval_thresh}{Filter fourier series based on peak strength p value. This will affect the reconstructed series.}
+\item{thresh}{Threshhold for p-value or Spectral Power Density. Filter fourier series based on peak strength p value if mc_sim not NULL, otherise on spd. This will affect the reconstructed series.}
+
+\item{verbose}{Verbosity level. 0=silent, 1=printed results.}
 }
 \value{
 A list with the following elements:\cr
@@ -27,12 +30,13 @@ t2 - approximated t.\cr
 y2 - reconstructed y. plot against t2.\cr
 frequency - frequency range used.\cr
 spectral_power_density - Plot against Frequency for the periodogram. unitless.\cr
-phase - phase relative to 0 in radians. range 0:2*pi.\cr
-peak_info - data.frame with index, frequency, spd, and (optional) pvalue of each detected peak.\cr
+phase_radian - phase relative to 0 in radians. range 0:2*pi.\cr
+phase_default - phase relative to 0 in the same unit as t. This is the distance from 0 to the nearest peak after t[1].\cr
+peak_info - data.frame with index, frequency, spd, phase_default, and (optional) pvalue of each detected peak.\cr
 peak_idx - index of highest peak\cr
 peak_spd - highest spd\cr
 peak_period - period corresponding to peak_idx\cr
-peak_phase - phase corresponding to peak_idx\cr
+peak_phase - phase_default corresponding to peak_idx\cr
 }
 \description{
 Calculates the Lomb Scargle Periodogram using the algorithm described by K. Hocke and N. Kämpfer (2009).
@@ -48,17 +52,17 @@ n = 100; #initial series length
 n_out = 50; #sereis length after random sampling
 period = 45;
 freq = 1/period;
-offset = 0;
-phase = pi;
-p_thresh = 0.05
+offset = 25;
+phase = pi/2;
+p_thresh = 0.05;
 N_mc_runs = 1000;
 zero_factor = 2;
 N_cores = 1;
 
 #create testing data
-x = seq(0,n-1)
+x = seq(0,n-1);
 x = x + offset;
-y = amp*cos(2*pi*freq*x + phase);
+y = amp*cos(2*pi*freq*x - phase);
 
 #random sampling to simulate missing data/irregular timepoints
 idx = seq(1,n);
@@ -76,17 +80,12 @@ x = x[idx];
 mc_sim = monte_carlo_lsp(x,N_mc_runs,ofac,N_cores);
 
 #LSP
-result = lsp(x,y,ofac=ofac,mc_sim = mc_sim,zero_factor = zero_factor, pval_thresh = p_thresh);
+# result = lsp(x,y,ofac=ofac,mc_sim = mc_sim,zero_factor = zero_factor, thresh = p_thresh,verbose=1);
+result = lsp(x,y,ofac=ofac,mc_sim = mc_sim,zero_factor = zero_factor, thresh = 0.05,verbose=1);
 
 #plot input data vs reconstructed signal
 plot(result$t,result$y,col="red")
 lines(result$t2,result$y2,col="green")
-
-print(result$peak_phase) #not too reliable
-print(result$peak_period) #pretty good
-
-
-
 
 
 }
